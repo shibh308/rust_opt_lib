@@ -2,7 +2,7 @@ use std::ops::Add;
 use std::ops::Mul;
 use std::ops::Sub;
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq)]
 struct Matrix<T> {
     h: usize,
     w: usize,
@@ -13,14 +13,14 @@ impl<T> Matrix<T>
 where
     T: Default + Copy,
 {
-    fn new(h: usize, w: usize, val: T) -> Matrix<T> {
+    fn new(h: usize, w: usize, val: T) -> Self {
         Matrix {
             h,
             w,
             a: vec![val; h * w],
         }
     }
-    fn transpose(&self) -> Matrix<T> {
+    fn transpose(&self) -> Self {
         let mut a = self.a.clone();
         for i in 0..self.h {
             for j in 0..self.w {
@@ -33,7 +33,7 @@ where
             a,
         }
     }
-    fn concat(&self, rhs: &Self) -> Matrix<T> {
+    fn concat(&self, rhs: &Self) -> Self {
         assert_eq!(self.h, rhs.h);
         let mut a = vec![Default::default(); self.h * (self.w + rhs.w)];
         for i in 0..self.h {
@@ -41,7 +41,7 @@ where
                 a[i * (self.w + rhs.w) + j] = self.get(i, j);
             }
             for j in 0..rhs.w {
-                a[i * (self.w + rhs.w) + self.w + j] = self.get(i, j);
+                a[i * (self.w + rhs.w) + self.w + j] = rhs.get(i, j);
             }
         }
         Matrix {
@@ -49,6 +49,20 @@ where
             w: self.w + rhs.w,
             a,
         }
+    }
+    fn split(&self, idx: usize) -> (Self, Self) {
+        assert!(idx < self.w);
+        let mut x = Matrix::new(self.h, idx, <T>::default());
+        let mut y = Matrix::new(self.h, self.w - idx, <T>::default());
+        for i in 0..self.h {
+            for j in 0..idx {
+                *x.get_mut(i, j) = self.get(i, j);
+            }
+            for j in 0..(self.w - idx) {
+                *y.get_mut(i, j) = self.get(i, j + idx);
+            }
+        }
+        (x, y)
     }
     fn get(&self, i: usize, j: usize) -> T {
         assert!(i < self.h);
@@ -59,6 +73,21 @@ where
         assert!(i < self.h);
         assert!(j < self.w);
         &mut self.a[i * self.w + j]
+    }
+}
+
+impl<T> Matrix<T>
+where
+    T: Default + Copy,
+    f64: From<T>,
+{
+    fn as_f64(&self) -> Matrix<f64> {
+        let a: Vec<f64> = self.a.iter().map(|x| f64::from(*x)).collect();
+        Matrix {
+            h: self.h,
+            w: self.w,
+            a,
+        }
     }
 }
 
@@ -140,6 +169,41 @@ impl Matrix<f64> {
             }
         }
         rank
+    }
+    fn inverse_matrix(&self) -> Option<Self> {
+        assert_eq!(self.h, self.w);
+        let n = self.h;
+        let mut right = Matrix::new(n, n, 0.0f64);
+        for i in 0..n {
+            *right.get_mut(i, i) = 1.0;
+        }
+        let extend = self.concat(&right);
+        let (rank, ex_inv) = extend.gaussian_elimination();
+        if rank != n {
+            None
+        } else {
+            let inv = ex_inv.split(n);
+            Some(inv.1)
+        }
+    }
+}
+
+impl<T> std::fmt::Debug for Matrix<T>
+where
+    T: Default + Copy + std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut v = vec![vec![Default::default(); self.w]; self.h];
+        for i in 0..self.h {
+            for j in 0..self.w {
+                v[i][j] = self.get(i, j);
+            }
+        }
+        f.debug_struct("Matrix")
+            .field("h", &self.h)
+            .field("w", &self.w)
+            .field("a", &v)
+            .finish()
     }
 }
 
@@ -313,14 +377,15 @@ mod tests {
             assert_eq!(rank, pred_rank);
             assert!(c.almost_eq(&b));
         }
-        /*
-        println!("rank: {}", rank);
-        for i in 0..self.h {
-            for j in 0..self.w {
-                print!("{} ", self.get(i, j));
-            }
-            println!();
-        }
-         */
+        let a = vec![vec![1, 1], vec![1, 2]];
+        let b = vec![vec![2, -1], vec![-1, 1]];
+        let inv = Matrix::from(b).as_f64();
+        let pred = Matrix::from(a).as_f64().inverse_matrix();
+        assert!(pred.is_some());
+        assert!(inv.almost_eq(&pred.unwrap()));
+
+        let a = vec![vec![2, 4], vec![-1, -2]];
+        let pred = Matrix::from(a).as_f64().inverse_matrix();
+        assert!(pred.is_none());
     }
 }
