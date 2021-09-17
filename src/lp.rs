@@ -520,7 +520,7 @@ mod tests {
     fn lp_solve() {
         /*
         maximize
-                 2x + 3y
+                 x + y
         s.t.
                   x +  y <= 6
                   x + 3y <= 12
