@@ -3,9 +3,9 @@ use std::ops::Mul;
 use std::ops::Sub;
 
 #[derive(Clone, PartialEq)]
-struct Matrix<T> {
-    h: usize,
-    w: usize,
+pub struct Matrix<T> {
+    pub h: usize,
+    pub w: usize,
     a: Vec<T>,
 }
 
@@ -13,14 +13,14 @@ impl<T> Matrix<T>
 where
     T: Default + Copy,
 {
-    fn new(h: usize, w: usize, val: T) -> Self {
+    pub fn new(h: usize, w: usize, val: T) -> Self {
         Matrix {
             h,
             w,
             a: vec![val; h * w],
         }
     }
-    fn transpose(&self) -> Self {
+    pub fn transpose(&self) -> Self {
         let mut a = self.a.clone();
         for i in 0..self.h {
             for j in 0..self.w {
@@ -33,7 +33,7 @@ where
             a,
         }
     }
-    fn concat(&self, rhs: &Self) -> Self {
+    pub fn concat(&self, rhs: &Self) -> Self {
         assert_eq!(self.h, rhs.h);
         let mut a = vec![Default::default(); self.h * (self.w + rhs.w)];
         for i in 0..self.h {
@@ -50,7 +50,7 @@ where
             a,
         }
     }
-    fn split(&self, idx: usize) -> (Self, Self) {
+    pub fn split(&self, idx: usize) -> (Self, Self) {
         assert!(idx < self.w);
         let mut x = Matrix::new(self.h, idx, <T>::default());
         let mut y = Matrix::new(self.h, self.w - idx, <T>::default());
@@ -64,12 +64,12 @@ where
         }
         (x, y)
     }
-    fn get(&self, i: usize, j: usize) -> T {
+    pub fn get(&self, i: usize, j: usize) -> T {
         assert!(i < self.h);
         assert!(j < self.w);
         self.a[i * self.w + j]
     }
-    fn get_mut(&mut self, i: usize, j: usize) -> &mut T {
+    pub fn get_mut(&mut self, i: usize, j: usize) -> &mut T {
         assert!(i < self.h);
         assert!(j < self.w);
         &mut self.a[i * self.w + j]
@@ -81,7 +81,7 @@ where
     T: Default + Copy,
     f64: From<T>,
 {
-    fn as_f64(&self) -> Matrix<f64> {
+    pub fn as_f64(&self) -> Matrix<f64> {
         let a: Vec<f64> = self.a.iter().map(|x| f64::from(*x)).collect();
         Matrix {
             h: self.h,
@@ -93,8 +93,7 @@ where
 
 impl Matrix<f64> {
     const EPS: f64 = 1e-6;
-    // 掃き出し法で、(rank, 操作後の行列) を返す
-    fn almost_eq(&self, rhs: &Self) -> bool {
+    pub fn almost_eq(&self, rhs: &Self) -> bool {
         assert_eq!(self.h, rhs.h);
         assert_eq!(self.w, rhs.w);
         let diff: Vec<_> = self
@@ -111,7 +110,8 @@ impl Matrix<f64> {
             .collect();
         diff.len() == self.h * self.w && diff.iter().fold(0.0, |m, v| v.max(m)) <= Self::EPS
     }
-    fn gaussian_elimination(&self) -> (usize, Matrix<f64>) {
+    // 掃き出し法で、(rank, 操作後の行列) を返す
+    pub fn gaussian_elimination(&self) -> (usize, Matrix<f64>) {
         let mut mat = self.clone();
         let rank = mat._gaussian_elimination();
         (rank, mat)
