@@ -573,29 +573,26 @@ mod tests {
         let x = 0;
         let y = 1;
 
-        let mut prob = LPProblem::new(2, true, vec![(1., x), (2., y)], vec![true; 2]);
-        prob.add_constraint(vec![(1., x), (1., y)], LessEq, 6.);
-        prob.add_constraint(vec![(1., x), (3., y)], LessEq, 12.);
-        prob.add_constraint(vec![(2., x), (1., y)], LessEq, 10.);
-        println!("------original problem------");
-        println!("{}", prob);
-        let (slack_prob, value, var) = prob.solve_by_simplex();
-        println!("------converted problem------");
-        println!("{}", slack_prob);
-        println!("max value: {},  var: {:?}", value, var);
-        println!();
-        println!();
+        let mut prob1 = LPProblem::new(2, true, vec![(1., x), (2., y)], vec![true; 2]);
+        prob1.add_constraint(vec![(1., x), (1., y)], LessEq, 6.);
+        prob1.add_constraint(vec![(1., x), (3., y)], LessEq, 12.);
+        prob1.add_constraint(vec![(2., x), (1., y)], LessEq, 10.);
 
-        let mut prob = LPProblem::new(2, true, vec![(2., x), (1., y)], vec![true; 2]);
-        prob.add_constraint(vec![(1., x), (-2., y)], LessEq, 4.);
-        prob.add_constraint(vec![(-1., x), (1., y)], LessEq, 2.);
-        println!("------original problem------");
-        println!("{}", prob);
-        let (slack_prob, value, var) = prob.solve_by_simplex();
-        println!("------converted problem------");
-        println!("{}", slack_prob);
-        println!("max value: {},  var: {:?}", value, var);
-        println!();
-        println!();
+        let mut prob2 = LPProblem::new(2, true, vec![(2., x), (1., y)], vec![true; 2]);
+        prob2.add_constraint(vec![(1., x), (-2., y)], LessEq, 4.);
+        prob2.add_constraint(vec![(-1., x), (1., y)], LessEq, 2.);
+
+        let problems = [prob1, prob2];
+
+        for prob in problems {
+            println!("------original problem------");
+            println!("{}", prob);
+            let (slack_prob, value, var) = prob.solve_by_simplex();
+            println!("------converted problem------");
+            println!("{}", slack_prob);
+            println!("max value: {},  var: {:?}", value, var);
+            println!();
+            println!();
+        }
     }
 }
