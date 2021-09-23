@@ -1,4 +1,5 @@
 use crate::matrix::Matrix;
+use std::fmt::Formatter;
 
 #[derive(PartialEq, Copy, Clone)]
 enum CompareOp {
@@ -29,36 +30,46 @@ struct LPProblem {
 
 impl std::fmt::Debug for LPProblem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let target_str = self
-            .target
-            .iter()
-            .map(|(rate, idx)| format!("({} * x_{})", rate, idx))
-            .fold("".to_string(), |s, t| format!("{} + {}", s, t))[3..]
-            .to_string();
-        let constraints: Vec<_> = self
-            .constraints
-            .iter()
-            .map(|(v, op, b)| {
-                let ax = v
-                    .iter()
-                    .map(|(rate, idx)| format!("({} * x_{})", rate, idx))
-                    .fold("".to_string(), |s, t| format!("{} + {}", s, t))[3..]
-                    .to_string();
-                format!("{} {} {}", ax, op.to_string(), b)
-            })
-            .collect();
-        let target = (if self.maximize {
-            "maximize "
-        } else {
-            "minimize "
-        })
-        .to_string()
-            + &target_str;
+        let (target, constraints) = self.get_output_format();
         f.debug_struct("LPProblem")
             .field("target", &target)
             .field("constraints", &constraints)
             .field("non_positive", &self.non_positive)
+            .field("maximize", &self.maximize)
             .finish()
+    }
+}
+
+impl std::fmt::Display for LPProblem {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let (target, constraints) = self.get_output_format();
+        let target_type = (if self.maximize {
+            "maximize"
+        } else {
+            "minimize"
+        })
+        .to_string();
+        let _ = write!(f, "{}:\n\t{}\n", target_type, target);
+        let _ = write!(
+            f,
+            "subject to:\n{}",
+            constraints
+                .iter()
+                .fold("".to_string(), |s, x| s + &format!("\t{}\n", x).to_string())
+        );
+        write!(
+            f,
+            "{}",
+            self.non_positive
+                .iter()
+                .enumerate()
+                .filter_map(|(i, b)| if *b {
+                    Some(format!("\tx_{} >= 0\n", i))
+                } else {
+                    None
+                })
+                .fold("".to_string(), |s, x| s + &x)
+        )
     }
 }
 
@@ -176,6 +187,27 @@ impl LPProblem {
             true
         }
     }
+    fn get_output_format(&self) -> (String, Vec<String>) {
+        let target_str = self
+            .target
+            .iter()
+            .map(|(rate, idx)| format!("({} * x_{})", rate, idx))
+            .fold("".to_string(), |s, t| format!("{} + {}", s, t))[3..]
+            .to_string();
+        let constraints: Vec<_> = self
+            .constraints
+            .iter()
+            .map(|(v, op, b)| {
+                let ax = v
+                    .iter()
+                    .map(|(rate, idx)| format!("({} * x_{})", rate, idx))
+                    .fold("".to_string(), |s, t| format!("{} + {}", s, t))[3..]
+                    .to_string();
+                format!("{} {} {}", ax, op.to_string(), b)
+            })
+            .collect();
+        (target_str, constraints)
+    }
     fn add_slack_variable(&mut self) {
         assert!(self.is_standard());
         let m = self.constraints.len();
@@ -190,10 +222,11 @@ impl LPProblem {
         self.constraints = constraints;
         self.non_positive = vec![true; self.n];
     }
-    fn solve_by_simplex(self) -> (f64, Vec<f64>) {
-        let mut slack_prob = self.clone();
+    fn solve_by_simplex(self) -> (LPProblem, f64, Vec<f64>) {
+        let mut slack_prob = self.clone().standard_form();
         slack_prob.add_slack_variable();
-        slack_prob._solve_by_simplex(self.n)
+        let (val, x) = slack_prob._solve_by_simplex(self.n);
+        (slack_prob, val, x)
     }
     fn make_dict(&self, nonbasic_idxes: &Vec<usize>) -> Vec<(usize, Vec<(f64, usize)>, f64)> {
         let n = self.n - nonbasic_idxes.len();
@@ -384,7 +417,7 @@ impl LPProblem {
                 *mat.get_mut(i, j1) = coef_mat.get(i, *j2);
             }
         }
-        true
+        mat.gaussian_elimination().0 == nonbasic_idxes.len()
     }
 
     fn _solve_by_simplex(&mut self, n: usize) -> (f64, Vec<f64>) {
@@ -401,15 +434,23 @@ impl LPProblem {
         // 辞書から基底変数の値を求める
         self.calc_basic_values(&dict, &mut x);
 
+        // 変数が一次独立でない場合は弾く
+        assert!(
+            Self::check_regularity(&coef_mat, &nonbasic_idxes),
+            "Variables must have linear independence"
+        );
+        // 原点が実行領域にない場合は弾く
+        // TODO: 原点が実行可能領域でない時にも動くようにする
+        assert!(x.iter().find(|val| val.is_sign_negative()).is_none());
+
         loop {
             let idxes_data = self.get_idxes_data(&nonbasic_idxes);
             self.calc_basic_values(&dict, &mut x);
 
-            // TODO: 制約式が一次独立でない場合の対応
             assert!(Self::check_regularity(&coef_mat, &nonbasic_idxes));
-            // TODO: 原点が実行可能領域でない時にも動くようにする
             assert!(x.iter().find(|val| val.is_sign_negative()).is_none());
 
+            /*
             println!();
             println!("{:?}", self);
             println!("{:?}", nonbasic_idxes);
@@ -421,6 +462,7 @@ impl LPProblem {
                     .iter()
                     .fold(offset_val, |sum, (a, i)| sum + *a * x[*i])
             );
+             */
 
             // 最小添字規則で, 被約費用 (目的関数の係数) が正である変数を探して動かす
             let change_pair = match self.target.iter().fold(None, |x, y| {
@@ -441,8 +483,18 @@ impl LPProblem {
                             }
                         }
                     }
-                    println!("max_idx: {}", max_idx);
-                    println!("max_mov: {}", max_mov);
+                    if max_mov.is_infinite() {
+                        // 無限に大きくできるので, その時の値を
+                        x[max_idx] = f64::INFINITY;
+                        for (i, ax, b) in &dict {
+                            let mut now_b = *b;
+                            for (per, idx) in ax {
+                                now_b += per * x[*idx];
+                            }
+                            x[*i] = now_b
+                        }
+                        return (f64::INFINITY, x);
+                    }
                     Some((max_idx, max_mov))
                 }
                 None => None,
@@ -452,7 +504,7 @@ impl LPProblem {
                     .target
                     .iter()
                     .fold(offset_val, |sum, (a, i)| sum + *a * x[*i]);
-                println!("end\n");
+                // println!("end\n");
                 return (z, x);
             }
             let (max_idx, max_mov) = change_pair.unwrap();
@@ -518,21 +570,32 @@ mod tests {
 
     #[test]
     fn lp_solve() {
-        /*
-        maximize
-                 x + 2y
-        s.t.
-                  x +  y <= 6
-                  x + 3y <= 12
-                 2x +  y <= 10
-         */
         let x = 0;
         let y = 1;
+
         let mut prob = LPProblem::new(2, true, vec![(1., x), (2., y)], vec![true; 2]);
         prob.add_constraint(vec![(1., x), (1., y)], LessEq, 6.);
         prob.add_constraint(vec![(1., x), (3., y)], LessEq, 12.);
         prob.add_constraint(vec![(2., x), (1., y)], LessEq, 10.);
-        let (value, var) = prob.solve_by_simplex();
+        println!("------original problem------");
+        println!("{}", prob);
+        let (slack_prob, value, var) = prob.solve_by_simplex();
+        println!("------converted problem------");
+        println!("{}", slack_prob);
         println!("max value: {},  var: {:?}", value, var);
+        println!();
+        println!();
+
+        let mut prob = LPProblem::new(2, true, vec![(2., x), (1., y)], vec![true; 2]);
+        prob.add_constraint(vec![(1., x), (-2., y)], LessEq, 4.);
+        prob.add_constraint(vec![(-1., x), (1., y)], LessEq, 2.);
+        println!("------original problem------");
+        println!("{}", prob);
+        let (slack_prob, value, var) = prob.solve_by_simplex();
+        println!("------converted problem------");
+        println!("{}", slack_prob);
+        println!("max value: {},  var: {:?}", value, var);
+        println!();
+        println!();
     }
 }
