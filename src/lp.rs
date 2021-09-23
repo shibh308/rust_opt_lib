@@ -124,7 +124,7 @@ impl LPProblem {
     // minimizeに変更した時の-1倍や変数の変更は考慮しない (TODO)
     fn standard_form(&self) -> LPProblem {
         // minimizeのmaximizeへの変更
-        let target: Vec<_> = self
+        let mut target: Vec<_> = self
             .target
             .iter()
             .map(|(val, idx)| (val * if self.maximize { 1.0 } else { -1.0 }, *idx))
@@ -134,9 +134,14 @@ impl LPProblem {
         let mut constraints = Vec::new();
         let mut nex_n = self.n;
         let mut non_pos_ids = vec![0; self.n];
+        let mut per_vec = vec![0.0; self.n];
+        for (per, i) in &target {
+            per_vec[*i] = *per;
+        }
         for i in 0..self.n {
             if !self.non_positive[i] {
                 non_pos_ids[i] = nex_n;
+                target.push((-1.0 * per_vec[i], nex_n));
                 nex_n += 1;
             }
         }
@@ -336,13 +341,6 @@ impl LPProblem {
             }
         }
 
-        /*
-        println!("old: {:?}", dict_target);
-        println!("new: {:?}", new_dict_target);
-        println!("old: {:?}", dict);
-        println!("new: {:?}", new_dict);
-         */
-
         // 正規の形に戻す
         let bucket_recalc = |v: Vec<(f64, usize)>, self_n: usize| -> Vec<_> {
             let mut bucket = vec![0.0; self_n];
@@ -417,10 +415,13 @@ impl LPProblem {
                 *mat.get_mut(i, j1) = coef_mat.get(i, *j2);
             }
         }
-        mat.gaussian_elimination().0 == nonbasic_idxes.len()
+        println!("{:?}", mat);
+        println!("{} {} {}", mat.gaussian_elimination().0, mat.h, mat.w);
+        mat.gaussian_elimination().0 == mat.h.min(mat.w)
     }
 
     fn _solve_by_simplex(&mut self, n: usize) -> (f64, Vec<f64>) {
+        let origin_target = self.target.clone();
         let mut nonbasic_idxes = (0..n).collect();
         let mut x = vec![0.0f64; self.n];
         let mut offset_val = 0.0;
@@ -493,6 +494,7 @@ impl LPProblem {
                             }
                             x[*i] = now_b
                         }
+                        self.target = origin_target;
                         return (f64::INFINITY, x);
                     }
                     Some((max_idx, max_mov))
@@ -504,7 +506,7 @@ impl LPProblem {
                     .target
                     .iter()
                     .fold(offset_val, |sum, (a, i)| sum + *a * x[*i]);
-                // println!("end\n");
+                self.target = origin_target;
                 return (z, x);
             }
             let (max_idx, max_mov) = change_pair.unwrap();
